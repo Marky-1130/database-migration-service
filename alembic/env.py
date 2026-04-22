@@ -1,23 +1,55 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+from typing import Any
+from sqlalchemy import engine_from_config, create_engine, text
 from sqlalchemy import pool
-
-# from .todo-app.
+from sqlalchemy.exc import SQLAlchemyError
 
 from alembic import context
 from config import settings
 from db_models import Base
 
-def create_db_base_url() -> str:
-    return f"mysql+pymysql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}?charset={settings.DB_CHARSET}&collation={settings.DB_COLLATE}"
+def create_db_if_not_exists():
 
-def create_db_url() -> str:
-    return f"mysql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}?charset={settings.DB_CHARSET}&collation={settings.DB_COLLATE}"
+    db_name = settings.DB_NAME
+    db_base_url = settings.create_db_base_url()
+    db_url = settings.create_db_url()
 
+    print("Database Settings Values")
+    print("---------------------------------------")
+    print(f"Database Name: {db_name}")
+    print(f"Base DB URL: {db_base_url}")
+    print(f"DB URL: {db_url}")
+    print("---------------------------------------")
 
-print(f"Base DB URL: {create_db_base_url()}")
-print(f"DB URL: {create_db_url()}")
+    conn = None
+
+    try:
+        base_engine = create_engine(db_base_url)
+
+        with base_engine.connect() as conn:
+            if settings.RESET_DB:
+                conn.execute(text(f"DROP DATABASE IF EXISTS `{db_name}`;"))
+
+            conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{db_name}`;"))
+
+        db_engine = create_engine(db_url)
+        with db_engine.connect() as conn:
+            #TODO: Update how to handle versions
+            conn.execute(text("TRUNCATE TABLE alembic_version;"))
+
+    except SQLAlchemyError as exc:
+        print(f"An error occurred: {exc}")
+        raise exc
+    
+    finally: 
+        if base_engine:
+            base_engine.dispose()
+        if db_engine:
+            db_engine.dispose()
+
+#Call the function for database creation/setup
+create_db_if_not_exists()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -39,7 +71,7 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 # Set the SQLAlchemy URL for Alembic configurations
-config.set_main_option("sqlalchemy.url", create_db_url())
+config.set_main_option("sqlalchemy.url", settings.create_db_url())
 
 
 def run_migrations_offline() -> None:
